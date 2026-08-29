@@ -1,9 +1,6 @@
-import { useMemo, useState } from 'react';
-import { FileText, Copy, Check, Download, Printer } from 'lucide-react';
-import type { Job, Quote, Settings } from '@/types';
-import { calculateQuote, formatAud, buildQuoteDocument } from '@/lib/quote';
-import { useCopy } from '@/lib/useCopy';
-import { SectionCard } from '@/components/SectionCard';
+import React, { useEffect, useState } from 'react';
+import type { Job, Settings } from '@/types';
+import { Printer } from 'lucide-react';
 
 interface Props {
   job: Job;
@@ -11,204 +8,1044 @@ interface Props {
   onChange: (patch: Partial<Job>) => void;
 }
 
+interface QuoteCostData {
+  labour: number;
+  materials: number;
+  subcontractors: number;
+  otherCosts: number;
+  marginRate: number;
+  gstRate: number;
+}
+
 export function QuoteTab({ job, settings, onChange }: Props) {
-  const copy = useCopy();
-  const [copied, setCopied] = useState(false);
-  const [generated, setGenerated] = useState(false);
+  const issueDate = new Date();
 
-  const totals = useMemo(() => calculateQuote(job.quote), [job.quote]);
+  const validUntil = new Date(issueDate);
+  validUntil.setDate(validUntil.getDate() + 30);
 
-  const updateQuote = (patch: Partial<Quote>) => {
-    onChange({ quote: { ...job.quote, ...patch } });
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString('en-AU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+
+  const dateStr = formatDate(issueDate);
+  const validUntilStr = formatDate(validUntil);
+
+  /*
+   * =========================================
+   * QUOTE COST DATA
+   * =========================================
+   */
+
+  const storedJob = job as Job &
+    Partial<QuoteCostData>;
+
+  const [costs, setCosts] = useState<QuoteCostData>({
+    labour: Number(storedJob.labour ?? 0),
+    materials: Number(storedJob.materials ?? 0),
+    subcontractors: Number(
+      storedJob.subcontractors ?? 0
+    ),
+    otherCosts: Number(
+      storedJob.otherCosts ?? 0
+    ),
+    marginRate: Number(
+      storedJob.marginRate ?? 20
+    ),
+    gstRate: Number(
+      storedJob.gstRate ?? 10
+    ),
+  });
+
+  /*
+   * =========================================
+   * CALCULATIONS
+   * =========================================
+   */
+
+  const costSubtotal =
+    costs.labour +
+    costs.materials +
+    costs.subcontractors +
+    costs.otherCosts;
+
+  const marginAmount =
+    costSubtotal *
+    (costs.marginRate / 100);
+
+  const netTotal =
+    costSubtotal + marginAmount;
+
+  const gstAmount =
+    netTotal *
+    (costs.gstRate / 100);
+
+  const totalQuote =
+    netTotal + gstAmount;
+
+  /*
+   * =========================================
+   * UPDATE JOB TOTALS
+   * =========================================
+   */
+
+  useEffect(() => {
+    onChange({
+      subtotal: netTotal,
+      gst: gstAmount,
+      total: totalQuote,
+    });
+  }, [
+    netTotal,
+    gstAmount,
+    totalQuote,
+    onChange,
+  ]);
+
+  /*
+   * =========================================
+   * UPDATE INPUT
+   * =========================================
+   */
+
+  const updateCost = (
+    field: keyof QuoteCostData,
+    value: number
+  ) => {
+    setCosts((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
   };
 
-  const handleGenerate = () => {
-    setGenerated(true);
-  };
+  /*
+   * =========================================
+   * QUOTE INFORMATION
+   * =========================================
+   */
 
-  const quoteDoc = useMemo(
-    () => (generated ? buildQuoteDocument(job, settings, totals) : ''),
-    [generated, job, settings, totals],
-  );
+  const quoteNumber =
+    job.id || '1391';
 
-  const handleCopyQuote = async () => {
-    if (!quoteDoc) return;
-    const ok = await copy(quoteDoc);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    }
-  };
+  const businessName =
+    settings?.businessName ||
+    'MY ELECTRICAL BUSINESS';
 
-  const handleDownload = () => {
-    if (!quoteDoc) return;
-    const blob = new Blob([quoteDoc], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `quote-${job.customerName.replace(/\s+/g, '-').toLowerCase() || 'job'}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+  const businessAddress =
+    settings?.address ||
+    '[Business Address]';
+
+  const businessPhone =
+    settings?.phone ||
+    '[Phone Number]';
+
+  const businessABN =
+    settings?.abn ||
+    '[ABN]';
+
+  const businessACN =
+    settings?.acn ||
+    '[ACN]';
+
+  const bankName =
+    settings?.bankName ||
+    '[Bank Name]';
+
+  const bsb =
+    settings?.bsb ||
+    '[BSB]';
+
+  const accountNumber =
+    settings?.accountNumber ||
+    '[Account Number]';
+
+  const customerName =
+    job.customerName ||
+    '[Customer Name]';
+
+  const customerAddress =
+    job.jobAddress ||
+    '[Job Address]';
+
+  const customerEmail =
+    job.customerEmail || '-';
+
+  const customerPhone =
+    job.customerPhone || '-';
+
+  const description =
+    job.jobDescription ||
+    job.scopeOfWork ||
+    'Electrical installation, testing and related services';
+
+  /*
+   * =========================================
+   * PRINT
+   * =========================================
+   */
 
   const handlePrint = () => {
-    if (!quoteDoc) return;
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(`<pre style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 24px; max-width: 800px; margin: 0 auto;">${escapeHtml(quoteDoc)}</pre>`);
-    w.document.close();
-    w.focus();
-    w.print();
+    window.print();
+  };
+
+  /*
+   * =========================================
+   * COST INPUT COMPONENT
+   * =========================================
+   */
+
+  const CostInput = ({
+    label,
+    field,
+    percentage = false,
+  }: {
+    label: string;
+    field: keyof QuoteCostData;
+    percentage?: boolean;
+  }) => {
+    return (
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+          {label}
+        </label>
+
+        <div className="relative">
+
+          {!percentage && (
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+              $
+            </span>
+          )}
+
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={costs[field]}
+            onChange={(event) => {
+              updateCost(
+                field,
+                Number(event.target.value) || 0
+              );
+            }}
+            className={`
+              w-full
+              rounded-lg
+              border
+              border-slate-300
+              bg-white
+              py-2.5
+              ${percentage ? 'pl-3' : 'pl-8'}
+              pr-9
+              text-sm
+              font-medium
+              text-slate-800
+              outline-none
+              transition
+              focus:border-blue-500
+              focus:ring-2
+              focus:ring-blue-100
+            `}
+          />
+
+          {percentage && (
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">
+              %
+            </span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="space-y-6">
-      <SectionCard
-        title="Quote Builder"
-        description="Enter your costs. The subtotal, margin, GST and total are calculated automatically."
-      >
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <MoneyField label="Labour" value={job.quote.labour} onChange={(v) => updateQuote({ labour: v })} />
-          <MoneyField label="Materials" value={job.quote.materials} onChange={(v) => updateQuote({ materials: v })} />
-          <MoneyField label="Subcontractors" value={job.quote.subcontractors} onChange={(v) => updateQuote({ subcontractors: v })} />
-          <MoneyField label="Other Costs" value={job.quote.otherCosts} onChange={(v) => updateQuote({ otherCosts: v })} />
-          <PercentField label="Margin (%)" value={job.quote.marginPercent} onChange={(v) => updateQuote({ marginPercent: v })} />
-          <PercentField label="GST Rate (%)" value={job.quote.gstRate} onChange={(v) => updateQuote({ gstRate: v })} />
+    <>
+      {/* =========================================
+          QUOTE CALCULATOR
+          WEB ONLY
+      ========================================== */}
+
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:hidden">
+
+        <div className="mb-6">
+          <h2 className="text-xl font-bold text-slate-900">
+            Quote Calculator
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-500">
+            Enter your costs. The subtotal, margin, GST and total are calculated automatically.
+          </p>
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-lg ring-1 ring-slate-200">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              <Row label="Cost Subtotal" value={formatAud(totals.costSubtotal)} />
-              <Row label={`Margin (${job.quote.marginPercent}%)`} value={formatAud(totals.marginAmount)} />
-              <Row label="Net Total" value={formatAud(totals.netTotal)} bold />
-              <Row label={`GST (${job.quote.gstRate}%)`} value={formatAud(totals.gstAmount)} />
-              <Row label="Total Quote (incl. GST)" value={formatAud(totals.total)} highlight />
-            </tbody>
-          </table>
+        {/* COST INPUTS */}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+          <CostInput
+            label="Labour"
+            field="labour"
+          />
+
+          <CostInput
+            label="Materials"
+            field="materials"
+          />
+
+          <CostInput
+            label="Subcontractors"
+            field="subcontractors"
+          />
+
+          <CostInput
+            label="Other Costs"
+            field="otherCosts"
+          />
+
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          <button onClick={handleGenerate} className="btn-primary">
-            <FileText className="h-4 w-4" /> Generate Quote
-          </button>
-        </div>
-      </SectionCard>
+        {/* MARGIN / GST */}
 
-      {generated && quoteDoc && (
-        <SectionCard
-          title="Generated Quote"
-          description={`Prepared by ${settings.businessName || 'your business'} for ${job.customerName || 'customer'}.`}
-          actions={
-            <>
-              <button onClick={handlePrint} className="btn-secondary">
-                <Printer className="h-4 w-4" /> Print
-              </button>
-              <button onClick={handleDownload} className="btn-secondary">
-                <Download className="h-4 w-4" /> Download
-              </button>
-              <button onClick={handleCopyQuote} className="btn-primary">
-                {copied ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
-                {copied ? 'Copied' : 'Copy Quote'}
-              </button>
-            </>
-          }
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+          <CostInput
+            label="Margin (%)"
+            field="marginRate"
+            percentage
+          />
+
+          <CostInput
+            label="GST Rate (%)"
+            field="gstRate"
+            percentage
+          />
+
+        </div>
+
+        {/* =========================================
+            CALCULATION SUMMARY
+        ========================================== */}
+
+        <div className="mt-6 border-t border-slate-200 pt-6">
+
+          <div className="ml-auto w-full max-w-md space-y-3">
+
+            {/* COST SUBTOTAL */}
+
+            <div className="flex items-center justify-between text-sm">
+
+              <span className="text-slate-500">
+                Cost Subtotal
+              </span>
+
+              <span className="font-semibold text-slate-800">
+                ${costSubtotal.toFixed(2)}
+              </span>
+
+            </div>
+
+            {/* MARGIN */}
+
+            <div className="flex items-center justify-between text-sm">
+
+              <span className="text-slate-500">
+                Margin ({costs.marginRate}%)
+              </span>
+
+              <span className="font-semibold text-slate-800">
+                ${marginAmount.toFixed(2)}
+              </span>
+
+            </div>
+
+            {/* NET TOTAL */}
+
+            <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-sm">
+
+              <span className="font-medium text-slate-600">
+                Net Total
+              </span>
+
+              <span className="font-bold text-slate-900">
+                ${netTotal.toFixed(2)}
+              </span>
+
+            </div>
+
+            {/* GST */}
+
+            <div className="flex items-center justify-between text-sm">
+
+              <span className="text-slate-500">
+                GST ({costs.gstRate}%)
+              </span>
+
+              <span className="font-semibold text-slate-800">
+                ${gstAmount.toFixed(2)}
+              </span>
+
+            </div>
+
+            {/* TOTAL QUOTE */}
+
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-800 px-4 py-4">
+
+              <span className="text-sm font-bold uppercase tracking-wide text-white">
+                Total Quote (incl. GST)
+              </span>
+
+              <span className="text-xl font-bold text-white">
+                ${totalQuote.toFixed(2)}
+              </span>
+
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+
+      {/* =========================================
+          EXPORT PDF BUTTON
+          WEB ONLY
+      ========================================== */}
+
+      <div className="mb-4 flex justify-end print:hidden">
+
+        <button
+          type="button"
+          onClick={handlePrint}
+          className="
+            inline-flex
+            items-center
+            gap-2
+            rounded-lg
+            bg-blue-600
+            px-5
+            py-2.5
+            text-sm
+            font-semibold
+            text-white
+            shadow-sm
+            transition
+            hover:bg-blue-700
+            focus:outline-none
+            focus:ring-2
+            focus:ring-blue-500
+            focus:ring-offset-2
+          "
         >
-          <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-4 text-xs leading-relaxed text-slate-800 ring-1 ring-slate-200">
-            {quoteDoc}
-          </pre>
-        </SectionCard>
-      )}
-    </div>
-  );
-}
 
-function MoneyField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <div className="relative">
-        <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-slate-400">
-          $
-        </span>
-        <input
-          type="number"
-          min={0}
-          step="0.01"
-          className="input pl-7"
-          value={Number.isNaN(value) ? '' : value}
-          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        />
+          <Printer className="h-4 w-4" />
+
+          Export PDF
+
+        </button>
+
       </div>
-    </div>
-  );
-}
 
-function PercentField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <div className="relative">
-        <input
-          type="number"
-          min={0}
-          step="0.1"
-          className="input pr-8"
-          value={Number.isNaN(value) ? '' : value}
-          onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        />
-        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-sm text-slate-400">
-          %
-        </span>
+      {/* =========================================
+          A4 QUOTE
+          ONLY THIS AREA PRINTS
+      ========================================== */}
+
+      <div
+        id="quote-document"
+        className="
+          mx-auto
+          w-full
+          max-w-[794px]
+          bg-white
+          text-slate-800
+          shadow-lg
+          print:max-w-none
+          print:shadow-none
+        "
+      >
+
+        {/* =========================================
+            HEADER
+        ========================================== */}
+
+        <header className="border-b-4 border-slate-800 px-8 py-7 md:px-10">
+
+          <div className="flex items-start justify-between gap-6">
+
+            {/* SPARKY QUOTE LOGO */}
+
+            <div className="flex items-center gap-3">
+
+              {/*
+                IMPORTANT:
+
+                Replace this image path with the existing
+                Sparky Quote logo used in your project.
+
+                Example:
+                /images/sparky-quote-logo.png
+
+                Do NOT change its colour.
+              */}
+
+              <img
+                src="/sparky-quote-logo.png"
+                alt="Sparky Quote"
+                className="h-12 w-auto object-contain"
+              />
+
+              <div>
+
+                <h1 className="text-xl font-bold tracking-tight text-slate-900">
+                  {businessName}
+                </h1>
+
+                <p className="mt-0.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Electrical Contractor
+                </p>
+
+              </div>
+
+            </div>
+
+            {/* QUOTE NUMBER */}
+
+            <div className="text-right">
+
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Electrical Quote
+              </p>
+
+              <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
+                #{quoteNumber}
+              </h2>
+
+            </div>
+
+          </div>
+
+        </header>
+
+        {/* =========================================
+            BUSINESS / CUSTOMER
+        ========================================== */}
+
+        <section className="px-8 py-7 md:px-10">
+
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+
+            {/* BUSINESS */}
+
+            <div>
+
+              <div className="mb-3 border-b border-slate-200 pb-2">
+
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+                  From
+                </h3>
+
+              </div>
+
+              <div className="space-y-1 text-sm">
+
+                <p className="font-bold text-slate-900">
+                  {businessName}
+                </p>
+
+                <p className="text-slate-600">
+                  {businessAddress}
+                </p>
+
+                <p className="text-slate-600">
+                  ABN: {businessABN}
+                </p>
+
+                <p className="text-slate-600">
+                  ACN: {businessACN}
+                </p>
+
+                <p className="text-slate-600">
+                  Phone: {businessPhone}
+                </p>
+
+              </div>
+
+            </div>
+
+            {/* CUSTOMER */}
+
+            <div>
+
+              <div className="mb-3 border-b border-slate-200 pb-2">
+
+                <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+                  Bill To
+                </h3>
+
+              </div>
+
+              <div className="space-y-1 text-sm">
+
+                <p className="font-bold text-slate-900">
+                  {customerName}
+                </p>
+
+                <p className="text-slate-600">
+                  {customerAddress}
+                </p>
+
+                <p className="text-slate-600">
+                  Email: {customerEmail}
+                </p>
+
+                <p className="text-slate-600">
+                  Phone: {customerPhone}
+                </p>
+
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* DATE */}
+
+          <div className="mt-7 grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-4 md:grid-cols-4">
+
+            <div>
+
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Quote Number
+              </p>
+
+              <p className="mt-1 text-sm font-semibold text-slate-800">
+                #{quoteNumber}
+              </p>
+
+            </div>
+
+            <div>
+
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Issue Date
+              </p>
+
+              <p className="mt-1 text-sm font-semibold text-slate-800">
+                {dateStr}
+              </p>
+
+            </div>
+
+            <div>
+
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Valid Until
+              </p>
+
+              <p className="mt-1 text-sm font-semibold text-slate-800">
+                {validUntilStr}
+              </p>
+
+            </div>
+
+            <div>
+
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Status
+              </p>
+
+              <p className="mt-1 text-sm font-semibold text-blue-600">
+                QUOTE
+              </p>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =========================================
+            SCOPE OF WORK
+        ========================================== */}
+
+        <section className="px-8 md:px-10">
+
+          <div className="mb-3">
+
+            <h3 className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+              Scope of Work
+            </h3>
+
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+
+            <p className="whitespace-pre-line text-sm leading-6 text-slate-700">
+              {description}
+            </p>
+
+          </div>
+
+        </section>
+
+        {/* =========================================
+            QUOTE TABLE
+        ========================================== */}
+
+        <section className="px-8 py-7 md:px-10">
+
+          <div className="overflow-hidden rounded-lg border border-slate-300">
+
+            <table className="w-full border-collapse text-xs">
+
+              <thead>
+
+                <tr className="bg-slate-800 text-white">
+
+                  <th className="w-[46%] px-4 py-3 text-left font-semibold uppercase tracking-wider">
+                    Description
+                  </th>
+
+                  <th className="w-[10%] px-2 py-3 text-center font-semibold uppercase tracking-wider">
+                    Qty
+                  </th>
+
+                  <th className="w-[16%] px-3 py-3 text-right font-semibold uppercase tracking-wider">
+                    Unit Price
+                  </th>
+
+                  <th className="w-[16%] px-3 py-3 text-right font-semibold uppercase tracking-wider">
+                    Subtotal
+                  </th>
+
+                  <th className="w-[12%] px-3 py-3 text-right font-semibold uppercase tracking-wider">
+                    GST
+                  </th>
+
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                <tr className="align-top">
+
+                  <td className="border-t border-slate-300 px-4 py-4">
+
+                    <p className="whitespace-pre-line font-medium leading-5 text-slate-800">
+                      {description}
+                    </p>
+
+                  </td>
+
+                  <td className="border-l border-t border-slate-300 px-2 py-4 text-center text-slate-700">
+                    1
+                  </td>
+
+                  <td className="border-l border-t border-slate-300 px-3 py-4 text-right text-slate-700">
+                    ${netTotal.toFixed(2)}
+                  </td>
+
+                  <td className="border-l border-t border-slate-300 px-3 py-4 text-right font-medium text-slate-800">
+                    ${netTotal.toFixed(2)}
+                  </td>
+
+                  <td className="border-l border-t border-slate-300 px-3 py-4 text-right text-slate-700">
+                    ${gstAmount.toFixed(2)}
+                  </td>
+
+                </tr>
+
+                <tr className="h-32">
+
+                  <td className="border-t border-slate-200"></td>
+
+                  <td className="border-l border-t border-slate-200"></td>
+
+                  <td className="border-l border-t border-slate-200"></td>
+
+                  <td className="border-l border-t border-slate-200"></td>
+
+                  <td className="border-l border-t border-slate-200"></td>
+
+                </tr>
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </section>
+
+        {/* =========================================
+            TOTALS
+        ========================================== */}
+
+        <section className="px-8 md:px-10">
+
+          <div className="flex justify-end">
+
+            <div className="w-full max-w-sm">
+
+              <div className="flex justify-between border-b border-slate-200 py-2 text-sm">
+
+                <span className="font-medium text-slate-500">
+                  Cost Subtotal
+                </span>
+
+                <span className="font-semibold text-slate-800">
+                  ${costSubtotal.toFixed(2)}
+                </span>
+
+              </div>
+
+              <div className="flex justify-between border-b border-slate-200 py-2 text-sm">
+
+                <span className="font-medium text-slate-500">
+                  Margin ({costs.marginRate}%)
+                </span>
+
+                <span className="font-semibold text-slate-800">
+                  ${marginAmount.toFixed(2)}
+                </span>
+
+              </div>
+
+              <div className="flex justify-between border-b border-slate-200 py-2 text-sm">
+
+                <span className="font-medium text-slate-500">
+                  Net Total
+                </span>
+
+                <span className="font-semibold text-slate-800">
+                  ${netTotal.toFixed(2)}
+                </span>
+
+              </div>
+
+              <div className="flex justify-between border-b border-slate-200 py-2 text-sm">
+
+                <span className="font-medium text-slate-500">
+                  GST ({costs.gstRate}%)
+                </span>
+
+                <span className="font-semibold text-slate-800">
+                  ${gstAmount.toFixed(2)}
+                </span>
+
+              </div>
+
+              <div className="mt-1 flex justify-between rounded-lg bg-slate-800 px-4 py-3">
+
+                <span className="text-sm font-bold uppercase tracking-wider text-white">
+                  Total Quote
+                </span>
+
+                <span className="text-lg font-bold text-white">
+                  ${totalQuote.toFixed(2)}
+                </span>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =========================================
+            PAYMENT DETAILS
+        ========================================== */}
+
+        <section className="px-8 py-8 md:px-10">
+
+          <div className="grid grid-cols-1 gap-6 border-t border-slate-200 pt-6 md:grid-cols-2">
+
+            <div>
+
+              <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+                Payment Details
+              </h3>
+
+              <div className="space-y-1 text-xs text-slate-600">
+
+                <p>
+                  <span className="font-semibold text-slate-800">
+                    Bank:
+                  </span>{' '}
+                  {bankName}
+                </p>
+
+                <p>
+                  <span className="font-semibold text-slate-800">
+                    BSB:
+                  </span>{' '}
+                  {bsb}
+                </p>
+
+                <p>
+                  <span className="font-semibold text-slate-800">
+                    Account:
+                  </span>{' '}
+                  {accountNumber}
+                </p>
+
+              </div>
+
+            </div>
+
+            <div>
+
+              <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+                Payment Terms
+              </h3>
+
+              <p className="text-xs leading-5 text-slate-600">
+                Payment is due within 7 days of completion unless otherwise agreed in writing.
+              </p>
+
+            </div>
+
+          </div>
+
+        </section>
+
+        {/* =========================================
+            TERMS
+        ========================================== */}
+
+        <section className="border-t border-slate-200 px-8 py-7 md:px-10">
+
+          <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">
+            Terms & Conditions
+          </h3>
+
+          <ol className="list-decimal space-y-1.5 pl-4 text-[10px] leading-4 text-slate-500">
+
+            <li>
+              This quotation is valid for 30 days from the issue date unless otherwise stated.
+            </li>
+
+            <li>
+              All electrical work will be carried out by appropriately licensed electrical workers and in accordance with applicable Australian legislation, regulations and relevant standards.
+            </li>
+
+            <li>
+              Electrical installation work will be carried out in accordance with AS/NZS 3000 where applicable.
+            </li>
+
+            <li>
+              Any additional work outside the agreed scope of work may be charged separately and will require approval where reasonably practicable.
+            </li>
+
+            <li>
+              Access to the work area, existing services and suitable working conditions are to be provided by the customer.
+            </li>
+
+            <li>
+              Any concealed defects, hazardous conditions or non-compliant existing electrical installations discovered during the work may require additional rectification work.
+            </li>
+
+            <li>
+              Final payment is due within 7 days of completion unless different payment terms have been agreed in writing.
+            </li>
+
+          </ol>
+
+        </section>
+
+        {/* =========================================
+            FOOTER
+        ========================================== */}
+
+        <footer className="border-t border-slate-200 px-8 py-5 text-center md:px-10">
+
+          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+            Thank you for your business
+          </p>
+
+          <p className="mt-1 text-[9px] text-slate-400">
+            Generated with SparkQuote — Electrical Quote Assistant
+          </p>
+
+        </footer>
+
       </div>
-    </div>
-  );
-}
 
-function Row({
-  label,
-  value,
-  bold,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  bold?: boolean;
-  highlight?: boolean;
-}) {
-  return (
-    <tr className={highlight ? 'bg-brand-50' : undefined}>
-      <td className={`px-4 py-3 ${highlight ? 'font-bold text-brand-900' : 'text-slate-600'} ${bold ? 'font-semibold' : ''}`}>
-        {label}
-      </td>
-      <td className={`px-4 py-3 text-right tabular-nums ${highlight ? 'text-lg font-bold text-brand-900' : 'font-semibold text-slate-900'}`}>
-        {value}
-      </td>
-    </tr>
-  );
-}
+      {/* =========================================
+          PRINT / PDF CSS
+      ========================================== */}
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+      <style>
+        {`
+          @media print {
+
+            @page {
+              size: A4;
+              margin: 10mm;
+            }
+
+            html,
+            body {
+              margin: 0 !important;
+              padding: 0 !important;
+              background: white !important;
+            }
+
+            body {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+
+            /*
+             * Hide all normal application UI.
+             */
+
+            body * {
+              visibility: hidden;
+            }
+
+            /*
+             * Show ONLY the actual quote.
+             */
+
+            #quote-document,
+            #quote-document * {
+              visibility: visible;
+            }
+
+            #quote-document {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: 100% !important;
+              max-width: none !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              box-shadow: none !important;
+              border: none !important;
+            }
+
+            #quote-document section,
+            #quote-document header,
+            #quote-document footer {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            table {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            tr {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+          }
+        `}
+      </style>
+    </>
+  );
 }
