@@ -1,3 +1,4 @@
+```tsx
 import React, { useEffect, useState } from 'react';
 import type { Job, Settings } from '@/types';
 import { Printer } from 'lucide-react';
@@ -39,25 +40,41 @@ export function QuoteTab({ job, settings, onChange }: Props) {
    * =========================================
    */
 
-  const storedJob = job as Job &
-    Partial<QuoteCostData>;
+  const storedJob = job as Job & Partial<QuoteCostData>;
 
   const [costs, setCosts] = useState<QuoteCostData>({
     labour: Number(storedJob.labour ?? 0),
     materials: Number(storedJob.materials ?? 0),
-    subcontractors: Number(
-      storedJob.subcontractors ?? 0
-    ),
-    otherCosts: Number(
-      storedJob.otherCosts ?? 0
-    ),
-    marginRate: Number(
-      storedJob.marginRate ?? 20
-    ),
-    gstRate: Number(
-      storedJob.gstRate ?? 10
-    ),
+    subcontractors: Number(storedJob.subcontractors ?? 0),
+    otherCosts: Number(storedJob.otherCosts ?? 0),
+    marginRate: Number(storedJob.marginRate ?? 20),
+    gstRate: Number(storedJob.gstRate ?? 10),
   });
+
+  /*
+   * =========================================
+   * KEEP LOCAL STATE IN SYNC WITH JOB
+   * =========================================
+   */
+
+  useEffect(() => {
+    setCosts({
+      labour: Number(storedJob.labour ?? 0),
+      materials: Number(storedJob.materials ?? 0),
+      subcontractors: Number(storedJob.subcontractors ?? 0),
+      otherCosts: Number(storedJob.otherCosts ?? 0),
+      marginRate: Number(storedJob.marginRate ?? 20),
+      gstRate: Number(storedJob.gstRate ?? 10),
+    });
+  }, [
+    job.id,
+    storedJob.labour,
+    storedJob.materials,
+    storedJob.subcontractors,
+    storedJob.otherCosts,
+    storedJob.marginRate,
+    storedJob.gstRate,
+  ]);
 
   /*
    * =========================================
@@ -72,32 +89,43 @@ export function QuoteTab({ job, settings, onChange }: Props) {
     costs.otherCosts;
 
   const marginAmount =
-    costSubtotal *
-    (costs.marginRate / 100);
+    costSubtotal * (costs.marginRate / 100);
 
   const netTotal =
     costSubtotal + marginAmount;
 
   const gstAmount =
-    netTotal *
-    (costs.gstRate / 100);
+    netTotal * (costs.gstRate / 100);
 
   const totalQuote =
     netTotal + gstAmount;
 
   /*
    * =========================================
-   * UPDATE JOB TOTALS
+   * SAVE CALCULATED VALUES TO JOB
    * =========================================
    */
 
   useEffect(() => {
     onChange({
+      labour: costs.labour,
+      materials: costs.materials,
+      subcontractors: costs.subcontractors,
+      otherCosts: costs.otherCosts,
+      marginRate: costs.marginRate,
+      gstRate: costs.gstRate,
+
       subtotal: netTotal,
       gst: gstAmount,
       total: totalQuote,
     });
   }, [
+    costs.labour,
+    costs.materials,
+    costs.subcontractors,
+    costs.otherCosts,
+    costs.marginRate,
+    costs.gstRate,
     netTotal,
     gstAmount,
     totalQuote,
@@ -112,11 +140,16 @@ export function QuoteTab({ job, settings, onChange }: Props) {
 
   const updateCost = (
     field: keyof QuoteCostData,
-    value: number
+    value: string
   ) => {
+    const parsedValue =
+      value === '' ? 0 : Number(value);
+
     setCosts((previous) => ({
       ...previous,
-      [field]: value,
+      [field]: Number.isFinite(parsedValue)
+        ? parsedValue
+        : 0,
     }));
   };
 
@@ -192,7 +225,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
 
   /*
    * =========================================
-   * COST INPUT COMPONENT
+   * COST INPUT
    * =========================================
    */
 
@@ -223,13 +256,10 @@ export function QuoteTab({ job, settings, onChange }: Props) {
             type="number"
             min="0"
             step="0.01"
-            value={costs[field]}
-            onChange={(event) => {
-              updateCost(
-                field,
-                Number(event.target.value) || 0
-              );
-            }}
+            value={costs[field] === 0 ? '' : costs[field]}
+            onChange={(event) =>
+              updateCost(field, event.target.value)
+            }
             className={`
               w-full
               rounded-lg
@@ -238,7 +268,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               bg-white
               py-2.5
               ${percentage ? 'pl-3' : 'pl-8'}
-              pr-9
+              ${percentage ? 'pr-9' : 'pr-3'}
               text-sm
               font-medium
               text-slate-800
@@ -255,6 +285,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               %
             </span>
           )}
+
         </div>
       </div>
     );
@@ -270,6 +301,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
       <div className="mb-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:hidden">
 
         <div className="mb-6">
+
           <h2 className="text-xl font-bold text-slate-900">
             Quote Calculator
           </h2>
@@ -277,6 +309,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
           <p className="mt-1 text-sm text-slate-500">
             Enter your costs. The subtotal, margin, GST and total are calculated automatically.
           </p>
+
         </div>
 
         {/* COST INPUTS */}
@@ -323,18 +356,13 @@ export function QuoteTab({ job, settings, onChange }: Props) {
 
         </div>
 
-        {/* =========================================
-            CALCULATION SUMMARY
-        ========================================== */}
+        {/* CALCULATION SUMMARY */}
 
         <div className="mt-6 border-t border-slate-200 pt-6">
 
           <div className="ml-auto w-full max-w-md space-y-3">
 
-            {/* COST SUBTOTAL */}
-
             <div className="flex items-center justify-between text-sm">
-
               <span className="text-slate-500">
                 Cost Subtotal
               </span>
@@ -342,13 +370,9 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <span className="font-semibold text-slate-800">
                 ${costSubtotal.toFixed(2)}
               </span>
-
             </div>
 
-            {/* MARGIN */}
-
             <div className="flex items-center justify-between text-sm">
-
               <span className="text-slate-500">
                 Margin ({costs.marginRate}%)
               </span>
@@ -356,10 +380,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <span className="font-semibold text-slate-800">
                 ${marginAmount.toFixed(2)}
               </span>
-
             </div>
-
-            {/* NET TOTAL */}
 
             <div className="flex items-center justify-between border-t border-slate-200 pt-3 text-sm">
 
@@ -373,8 +394,6 @@ export function QuoteTab({ job, settings, onChange }: Props) {
 
             </div>
 
-            {/* GST */}
-
             <div className="flex items-center justify-between text-sm">
 
               <span className="text-slate-500">
@@ -386,8 +405,6 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               </span>
 
             </div>
-
-            {/* TOTAL QUOTE */}
 
             <div className="mt-3 flex items-center justify-between rounded-lg bg-slate-800 px-4 py-4">
 
@@ -404,10 +421,11 @@ export function QuoteTab({ job, settings, onChange }: Props) {
           </div>
 
         </div>
+
       </div>
 
       {/* =========================================
-          EXPORT PDF BUTTON
+          EXPORT PDF
           WEB ONLY
       ========================================== */}
 
@@ -436,18 +454,14 @@ export function QuoteTab({ job, settings, onChange }: Props) {
             focus:ring-offset-2
           "
         >
-
           <Printer className="h-4 w-4" />
-
           Export PDF
-
         </button>
 
       </div>
 
       {/* =========================================
           A4 QUOTE
-          ONLY THIS AREA PRINTS
       ========================================== */}
 
       <div
@@ -472,39 +486,15 @@ export function QuoteTab({ job, settings, onChange }: Props) {
 
           <div className="flex items-start justify-between gap-6">
 
-            {/* SPARKY QUOTE LOGO */}
+            {/* ORIGINAL SPARKQUOTE LOGO */}
 
             <div className="flex items-center gap-3">
 
-              {/*
-                IMPORTANT:
-
-                Replace this image path with the existing
-                Sparky Quote logo used in your project.
-
-                Example:
-                /images/sparky-quote-logo.png
-
-                Do NOT change its colour.
-              */}
-
               <img
                 src="/sparky-quote-logo.png"
-                alt="Sparky Quote"
+                alt="SparkQuote"
                 className="h-12 w-auto object-contain"
               />
-
-              <div>
-
-                <h1 className="text-xl font-bold tracking-tight text-slate-900">
-                  {businessName}
-                </h1>
-
-                <p className="mt-0.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Electrical Contractor
-                </p>
-
-              </div>
 
             </div>
 
@@ -533,8 +523,6 @@ export function QuoteTab({ job, settings, onChange }: Props) {
         <section className="px-8 py-7 md:px-10">
 
           <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-
-            {/* BUSINESS */}
 
             <div>
 
@@ -571,8 +559,6 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               </div>
 
             </div>
-
-            {/* CUSTOMER */}
 
             <div>
 
@@ -613,7 +599,6 @@ export function QuoteTab({ job, settings, onChange }: Props) {
           <div className="mt-7 grid grid-cols-2 gap-4 rounded-lg bg-slate-50 p-4 md:grid-cols-4">
 
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Quote Number
               </p>
@@ -621,11 +606,9 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <p className="mt-1 text-sm font-semibold text-slate-800">
                 #{quoteNumber}
               </p>
-
             </div>
 
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Issue Date
               </p>
@@ -633,11 +616,9 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <p className="mt-1 text-sm font-semibold text-slate-800">
                 {dateStr}
               </p>
-
             </div>
 
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Valid Until
               </p>
@@ -645,11 +626,9 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <p className="mt-1 text-sm font-semibold text-slate-800">
                 {validUntilStr}
               </p>
-
             </div>
 
             <div>
-
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Status
               </p>
@@ -657,7 +636,6 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <p className="mt-1 text-sm font-semibold text-blue-600">
                 QUOTE
               </p>
-
             </div>
 
           </div>
@@ -759,13 +737,9 @@ export function QuoteTab({ job, settings, onChange }: Props) {
                 <tr className="h-32">
 
                   <td className="border-t border-slate-200"></td>
-
                   <td className="border-l border-t border-slate-200"></td>
-
                   <td className="border-l border-t border-slate-200"></td>
-
                   <td className="border-l border-t border-slate-200"></td>
-
                   <td className="border-l border-t border-slate-200"></td>
 
                 </tr>
@@ -839,7 +813,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               <div className="mt-1 flex justify-between rounded-lg bg-slate-800 px-4 py-3">
 
                 <span className="text-sm font-bold uppercase tracking-wider text-white">
-                  Total Quote
+                  Total Quote (incl. GST)
                 </span>
 
                 <span className="text-lg font-bold text-white">
@@ -999,7 +973,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
             }
 
             /*
-             * Hide all normal application UI.
+             * Hide everything first.
              */
 
             body * {
@@ -1007,7 +981,7 @@ export function QuoteTab({ job, settings, onChange }: Props) {
             }
 
             /*
-             * Show ONLY the actual quote.
+             * Show ONLY the quote document.
              */
 
             #quote-document,
@@ -1016,16 +990,23 @@ export function QuoteTab({ job, settings, onChange }: Props) {
             }
 
             #quote-document {
-              position: absolute;
-              left: 0;
-              top: 0;
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+
               width: 100% !important;
               max-width: none !important;
+
               margin: 0 !important;
               padding: 0 !important;
+
               box-shadow: none !important;
               border: none !important;
             }
+
+            /*
+             * Prevent quote sections from being split.
+             */
 
             #quote-document section,
             #quote-document header,
@@ -1043,9 +1024,12 @@ export function QuoteTab({ job, settings, onChange }: Props) {
               break-inside: avoid;
               page-break-inside: avoid;
             }
+
           }
         `}
       </style>
+
     </>
   );
 }
+```
