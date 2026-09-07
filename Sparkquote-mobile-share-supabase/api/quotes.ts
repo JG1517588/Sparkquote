@@ -5,55 +5,86 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function client() {
-  if (!supabaseUrl || !serviceRoleKey) throw new Error('Supabase environment variables are missing');
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('Missing env vars:', { supabaseUrl: !!supabaseUrl, serviceRoleKey: !!serviceRoleKey });
+    throw new Error('Supabase environment variables are missing');
+  }
   return createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 }
 
 export default async function handler(req: any, res: any) {
+  console.log('API called:', req.method);
+  
   try {
+    // POST: 保存报价单
     if (req.method === 'POST') {
-      const quote = req.body?.quote;
+      console.log('POST request received');
+      
+      const { quote } = req.body;
+      console.log('Quote data received:', !!quote);
+      
       if (!quote || typeof quote !== 'object' || JSON.stringify(quote).length > 100_000) {
         return res.status(400).json({ error: 'Invalid quote' });
       }
       
       const token = randomBytes(24).toString('base64url');
+      console.log('Generated token:', token);
       
-      // ✅ 改为使用 shares 表
       const { error } = await client()
-        .from('shares')  // ← 改成 'shares'
+        .from('shares')
         .insert({ 
-          share_id: token,      // ← 字段名改成 share_id
-          job_data: quote,      // ← 字段名改成 job_data
+          share_id: token,
+          job_data: quote,
           created_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase insert error:', error);
+        throw error;
+      }
+      
+      console.log('Quote saved successfully');
       return res.status(201).json({ token });
     }
     
+    // GET: 获取报价单
     if (req.method === 'GET') {
       const token = typeof req.query?.token === 'string' ? req.query.token : '';
-      if (!token) return res.status(400).json({ error: 'Missing token' });
+      console.log('GET request, token:', token);
       
-      // ✅ 改为使用 shares 表
+      if (!token) {
+        return res.status(400).json({ error: 'Missing token' });
+      }
+      
       const { data, error } = await client()
-        .from('shares')  // ← 改成 'shares'
-        .select('job_data, expires_at')  // ← 字段名改成 job_data
-        .eq('share_id', token)  // ← 字段名改成 share_id
+        .from('shares')
+        .select('job_data, expires_at')
+        .eq('share_id', token)
         .maybeSingle();
       
-      if (error) throw error;
-      if (!data || (data.expires_at && new Date(data.expires_at) < new Date())) {
+      if (error) {
+        console.error('Supabase select error:', error);
+        throw error;
+      }
+      
+      if (!data) {
+        console.log('Quote not found for token:', token);
         return res.status(404).json({ error: 'Quote not found' });
       }
-      return res.status(200).json({ quote: data.job_data });  // ← 改成 job_data
+      
+      if (data.expires_at && new Date(data.expires_at) < new Date()) {
+        console.log('Quote expired for token:', token);
+        return res.status(404).json({ error: 'Quote expired' });
+      }
+      
+      console.log('Quote found successfully');
+      return res.status(200).json({ quote: data.job_data });
     }
     
     return res.status(405).json({ error: 'Method not allowed' });
-  } catch (error) {
-    console.error('Quote API error', error);
-    return res.status(500).json({ error: 'Quote service unavailable' });
+  } catch (error: any) {
+    console.error('Quote API error:', error);
+    return res.status(500).json({ error: 'Quote service unavailable', details: error.message });
   }
 }
