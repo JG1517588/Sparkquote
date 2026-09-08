@@ -60,7 +60,12 @@ export default async function handler(req: any, res: any) {
     if (req.method === 'POST') {
       console.log('POST request received');
       
-      const { quote } = req.body;
+      const { quote, customerName, customerPhone, customerEmail } = req.body;
+
+// 简单的校验：既然想留存客户，至少要有个名字或电话/邮箱
+if (!customerName && !customerPhone && !customerEmail) {
+   return res.status(400).json({ error: 'Please provide customer contact details' });
+}
       console.log('Quote data received:', !!quote);
       
       if (!quote || typeof quote !== 'object' || JSON.stringify(quote).length > 100_000) {
