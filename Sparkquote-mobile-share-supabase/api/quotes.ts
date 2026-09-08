@@ -13,24 +13,36 @@ function client() {
 }
 
 // ==========================================
-// 🛠️ 电工计算数学公式（保留）
+// 🛠️ 在提取的数据上运行电工计算
 // ==========================================
 function calculateElectricalMetrics(input: any) {
+  // 从 input（即 quote）中提取计算所需的数据
   const { 
     labourHours = 0, labourRate = 0, callOutFee = 0, 
     materials = [], markupPercent = 0 
   } = input;
 
+  // 1. 计算材料费：材料单价 * 数量
   const totalMaterials = materials.reduce((sum: number, item: any) => {
     return sum + (parseFloat(item.price) * parseInt(item.qty));
   }, 0);
 
+  // 2. 计算人工费
   const totalLabour = parseFloat(labourHours) * parseFloat(labourRate);
+
+  // 3. 基础成本 (材料 + 人工 + 上门费)
   const baseCost = totalMaterials + totalLabour + parseFloat(callOutFee);
+
+  // 4. 加毛利率 (例如 20% 就是 0.2)
   const costWithMarkup = baseCost * (1 + (parseFloat(markupPercent) / 100));
+
+  // 5. 算 GST (澳洲 10%)
   const gst = costWithMarkup * 0.10;
+
+  // 6. 最终总价
   const total = costWithMarkup + gst;
 
+  // 返回扁平化计算结果，方便存入数据库
   return {
     total_materials: totalMaterials.toFixed(2),
     total_labour: totalLabour.toFixed(2),
@@ -49,38 +61,54 @@ export default async function handler(req: any, res: any) {
     if (req.method === 'POST') {
       console.log('POST request received');
       
-      // 1. 接收前端传来的数据（包括顾客信息）
-      const { quote, customerName, customerPhone, customerEmail } = req.body;
+      const { quote } = req.body;
       console.log('Quote data received:', !!quote);
-      console.log('Customer info:', { customerName, customerPhone, customerEmail });
       
       if (!quote || typeof quote !== 'object' || JSON.stringify(quote).length > 100_000) {
         return res.status(400).json({ error: 'Invalid quote' });
       }
-      
-      // 2. 简单的校验（顾客信息不能为空）
-      if (!customerName || !customerPhone || !customerEmail) {
-         return res.status(400).json({ error: 'Please provide customer contact details' });
-      }
-      
-      // 3. 计算总价等数据
+
+      // ==========================================
+      // 💡 从 quote 中提取客户信息，并运行计算
+      // ==========================================
+      const customerName = quote.customer?.customerName || '';
+      const customerPhone = quote.customer?.customerPhone || '';
+      const customerEmail = quote.customer?.customerEmail || '';
+      const jobAddress = quote.customer?.jobAddress || '';
+
+      const jobType = quote.job?.jobType || '';
+      const jobDescription = quote.job?.jobDescription || '';
+      const scope = quote.job?.scope || '';
+
+      // 调用电工计算逻辑
       const calculatedMetrics = calculateElectricalMetrics(quote);
       console.log('Calculated Metrics:', calculatedMetrics);
+      // ==========================================
 
-      // 4. 生成唯一 Token
       const token = randomBytes(24).toString('base64url');
       console.log('Generated token:', token);
       
-      // 5. 插入数据库
+      // 插入数据时，把计算好的数据一起存入数据库
       const { error } = await client()
         .from('shares')
         .insert({ 
           share_id: token,
           job_data: quote,
-          customer_name: customerName,      // ✅ 存入顾客名字
-          customer_phone: customerPhone,    // ✅ 存入顾客电话
-          customer_email: customerEmail,    // ✅ 存入顾客邮箱
-          ...calculatedMetrics,             // 把计算出的 总价、GST 等 一并存入！
+          
+          // 客户信息
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          customer_email: customerEmail,
+          job_address: jobAddress,
+          
+          // 工作详情
+          job_type: jobType,
+          job_description: jobDescription,
+          scope: scope,
+          
+          // 计算数据
+          ...calculatedMetrics, // 把计算出的 总价、GST 等 一并存入！
+          
           created_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         });
