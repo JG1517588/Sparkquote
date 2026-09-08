@@ -12,6 +12,46 @@ function client() {
   return createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 }
 
+// ==========================================
+// 🛠️ 在这里加入电工计算数学公式
+// ==========================================
+function calculateElectricalMetrics(input: any) {
+  const { 
+    labourHours = 0, labourRate = 0, callOutFee = 0, 
+    materials = [], markupPercent = 0 
+  } = input;
+
+  // 1. 计算材料费：材料单价 * 数量
+  const totalMaterials = materials.reduce((sum: number, item: any) => {
+    return sum + (parseFloat(item.price) * parseInt(item.qty));
+  }, 0);
+
+  // 2. 计算人工费
+  const totalLabour = parseFloat(labourHours) * parseFloat(labourRate);
+
+  // 3. 基础成本 (材料 + 人工 + 上门费)
+  const baseCost = totalMaterials + totalLabour + parseFloat(callOutFee);
+
+  // 4. 加毛利率 (例如 20% 就是 0.2)
+  const costWithMarkup = baseCost * (1 + (parseFloat(markupPercent) / 100));
+
+  // 5. 算 GST (澳洲 10%)
+  const gst = costWithMarkup * 0.10;
+
+  // 6. 最终总价
+  const total = costWithMarkup + gst;
+
+  // 返回扁平化计算结果，方便存入数据库
+  return {
+    total_materials: totalMaterials.toFixed(2),
+    total_labour: totalLabour.toFixed(2),
+    total_cost_with_markup: costWithMarkup.toFixed(2),
+    gst_amount: gst.toFixed(2),
+    total_amount: total.toFixed(2)
+  };
+}
+// ==========================================
+
 export default async function handler(req: any, res: any) {
   console.log('API called:', req.method);
   
@@ -27,14 +67,20 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ error: 'Invalid quote' });
       }
       
+      // 🛠️ 调用刚才写的计算公式
+      const calculatedMetrics = calculateElectricalMetrics(quote);
+      console.log('Calculated Metrics:', calculatedMetrics);
+
       const token = randomBytes(24).toString('base64url');
       console.log('Generated token:', token);
       
+      // 插入数据时，把计算好的数据一起存入数据库
       const { error } = await client()
         .from('shares')
         .insert({ 
           share_id: token,
           job_data: quote,
+          ...calculatedMetrics, // 把计算出的 总价、GST 等 一并存入！
           created_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         });
